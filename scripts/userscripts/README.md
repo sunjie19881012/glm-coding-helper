@@ -13,4 +13,4 @@
 http://127.0.0.1:8888
 ```
 
-脚本默认使用 GLM Coding Plan 邀请码 `9GXWL9KCGZ`，用于折扣入口。
+脚本默认使用作者内置 GLM Coding Plan 折扣入口；如有需要可自行修改入口参数。

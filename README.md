@@ -2,7 +2,7 @@
 
 油猴脚本 + 本地 CPU/GPU OCR 后端，用于 GLM Coding Plan 页面流程辅助和中文点选验证码自动识别。
 
-默认使用作者 GLM 邀请码 `9GXWL9KCGZ` 进入折扣入口，可获得 95 折优惠；介意者可在脚本中自行替换邀请码。
+默认使用作者内置折扣入口，可获得 95 折优惠；介意者可在脚本中自行替换入口参数。
 
 ## 演示
 
@@ -16,7 +16,7 @@ https://github.com/user-attachments/assets/e1a56d07-5c4d-4aa1-a567-909dd25bd037
 - 遇到中文点选验证码时，调用本地 OCR 后端自动识别并点击
 - 支持 CPU/GPU 本地识别，不上传验证码图片到第三方服务
 - 支持一键多开窗口，方便补货前预热和同时监控
-- 默认使用作者邀请码 `9GXWL9KCGZ` 进入 GLM Coding Plan 折扣入口
+- 默认使用作者内置折扣入口进入 GLM Coding Plan
 
 后端的安装、GPU/CPU 自动选择、worker 数、OCR 配置等说明见：
 

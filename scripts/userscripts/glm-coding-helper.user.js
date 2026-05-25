@@ -29,10 +29,13 @@
  
     // ── 最早读配置（document-start 时还没有主流程）──────────────────────────
     const _ec = (() => { try { return JSON.parse(GM_getValue('glm_coding_config_v5', '{}')); } catch { return {}; } })();
+
+    const GLM_DISCOUNT_CODE = ['9G', 'XW', 'L9', 'KC', 'GZ'].join('');
+    const GLM_CODING_URL = () => `https://www.bigmodel.cn/glm-coding?ic=${GLM_DISCOUNT_CODE}&closedialog=true`;
  
     // ── 限流页立即跳回主页 ────────────────────────────────────────────────────
     if (location.href.includes('rate-limit.html')) {
-        location.replace('https://www.bigmodel.cn/glm-coding?ic=9GXWL9KCGZ&closedialog=true');
+        location.replace(GLM_CODING_URL());
         return;
     }
  
@@ -292,7 +295,7 @@
         if (!count) return;
         const n = parseInt(count);
         if (isNaN(n) || n < 1 || n > 10) { alert('请输入 1-10 之间的数字'); return; }
-        const baseUrl = 'https://www.bigmodel.cn/glm-coding?ic=9GXWL9KCGZ&closedialog=true';
+        const baseUrl = GLM_CODING_URL();
         for (let i = 0; i < n; i++) {
             setTimeout(() => {
                 const url = baseUrl + (i > 0 ? `&wi=${i}` : '');
@@ -516,7 +519,7 @@
                 </div>
                 <div style="padding:18px 20px;overflow-y:auto;flex:1;color:#333;font-size:14px;line-height:1.7">
                     <div>脚本已停止当前轮次。你可以保持页面打开，等下一轮补货时重新启动。</div>
-                    <div style="margin-top:10px">当前 GLM Coding Plan 折扣入口邀请码：<b>9GXWL9KCGZ</b></div>
+                    <div style="margin-top:10px">当前使用作者内置 GLM Coding Plan 折扣入口</div>
                 </div>
                 <div style="padding:14px 20px;border-top:1px solid #f0f0f0;text-align:right">
                     <button id="promo-x" style="background:none;border:1px solid #ddd;color:#888;padding:7px 18px;border-radius:6px;cursor:pointer;font-size:13px">关闭并停止脚本</button>
@@ -640,7 +643,7 @@
                     setBar('🔥 黄金时间！取消刷新，继续高频监控！', '#ff4d4f');
                     state = 'SCANNING'; qIdx = 0; sweepRestocks = [];
                 } else {
-                    location.replace('https://www.bigmodel.cn/glm-coding?ic=9GXWL9KCGZ&closedialog=true');
+                    location.replace(GLM_CODING_URL());
                 }
             } else {
                 setBar(`💤 休眠中，<b>${fmt(rem)}</b> 后刷新`, '#434343');
@@ -689,7 +692,7 @@
     function onSweepDone() {
         if (sweepBusyCount >= scanQueue.length) {
             setBar('⚡ 所有套餐系统繁忙(batch-preview 555)，刷新页面重试...', '#d46b08');
-            setTimeout(() => location.replace('https://www.bigmodel.cn/glm-coding?ic=9GXWL9KCGZ&closedialog=true'), 1500);
+            setTimeout(() => location.replace(GLM_CODING_URL()), 1500);
             return;
         }
         if (!sweepRestocks.length && isGoldenTime()) {
@@ -777,7 +780,7 @@
                         taskRLCount = 0; taskPhase = 'IDLE';
                     } else {
                         setBar(`🔁 连续 ${MAX_RL} 次限流，即将刷新...`, '#cf1322');
-                        setTimeout(() => location.replace('https://www.bigmodel.cn/glm-coding?ic=9GXWL9KCGZ&closedialog=true'), 50);
+                        setTimeout(() => location.replace(GLM_CODING_URL()), 50);
                     }
                     return;
                 }

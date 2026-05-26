@@ -25,17 +25,14 @@ https://github.com/user-attachments/assets/e1a56d07-5c4d-4aa1-a567-909dd25bd037
 - 默认使用作者内置折扣入口进入 GLM Coding Plan
 
 注意：目前仅适配了chrome和edge浏览器，我测试了1080p-1920p。桌面100%-150%放大倍率，浏览器50%-125%放大倍率都可以用。如果遇到截图或者识别问题可以调整为1920p，桌面100%-125%放大，浏览器100%尺寸。
+
 后端的安装、GPU/CPU 自动选择、worker 数、OCR 配置等说明见：
 
 ```text
 docs/backend_config.md
 ```
 
-验证码识别模型从传统 CV、YOLO、GLM-OCR/VLM 标注、手搓排序模型到 PP-OCRv5 的开发历程见：
 
-```text
-docs/captcha_model_journey.md
-```
 
 ## 快速开始
 
@@ -145,7 +142,11 @@ models/weights/yolo-captcha-detector.pt
 ```powershell
 $env:CNCAPTCHA_DETECTOR_PATH="D:\path\to\best.pt"
 ```
+验证码识别模型从传统 CV、YOLO、GLM-OCR/VLM 标注、手搓排序模型到 PP-OCRv5 的开发历程见：
 
+```text
+docs/captcha_model_journey.md
+```
 ## 致谢
 
 本项目的油猴前端脚本是在 Greasy Fork 用户 `mumumi` 的《GLM Coding Plan抢购助手》基础上二次开发而来：

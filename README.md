@@ -117,6 +117,19 @@ http://127.0.0.1:8888
 powershell -ExecutionPolicy Bypass -File scripts\start_backend.ps1 -Mode gpu
 ```
 
+GPU 模式需要确认 `.venv_paddle_gpu` 里安装的是 GPU 版 PyTorch。
+`paddlepaddle-gpu` 只负责 OCR，YOLO/Ultralytics 依赖 `torch`；如果
+`torch` 是 CPU 版，后端仍会跑起来，但 YOLO 会走 CPU。
+
+检查方式：
+
+```powershell
+.\.venv_paddle_gpu\Scripts\python.exe -c "import torch; print(torch.__version__); print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'no cuda')"
+```
+
+如果输出 `False` 或 `no cuda`，请在 `.venv_paddle_gpu` 中按 PyTorch
+官网选择 CUDA 版本重新安装 GPU 版 `torch` 后再启动 GPU 模式。
+
 强制 CPU：
 
 ```powershell
@@ -147,6 +160,20 @@ $env:CNCAPTCHA_DETECTOR_PATH="D:\path\to\best.pt"
 ```text
 docs/captcha_model_journey.md
 ```
+
+## 常见问题
+
+### 识别结果或点击位置像是错位、滞后一张图？
+
+先刷新一下浏览器页面，再重新打开验证码测试。验证码弹窗刷新、页面状态缓存、
+多窗口切换或浏览器缩放状态异常时，前端显示和后端截图可能短暂不同步。
+
+### 推荐从哪里进入？
+
+推荐使用这个链接进入：
+
+👉 95 折优惠链接：https://www.bigmodel.cn/glm-coding?ic=9GXWL9KCGZ
+
 ## 致谢
 
 本项目的油猴前端脚本是在 Greasy Fork 用户 `mumumi` 的《GLM Coding Plan抢购助手》基础上二次开发而来：

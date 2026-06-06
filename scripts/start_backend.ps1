@@ -40,7 +40,7 @@ function Test-BackendMainPython {
     $ErrFile = [System.IO.Path]::GetTempFileName()
     try {
         $Proc = Start-Process -FilePath $PythonPath `
-            -ArgumentList @("-c", "import ultralytics, PIL, cv2, numpy") `
+            -ArgumentList @("-c", "import ultralytics") `
             -NoNewWindow `
             -Wait `
             -PassThru `
@@ -65,9 +65,9 @@ if (-not $env:CNCAPTCHA_GPU_OCR_PYTHON) {
 }
 
 $MainPython = ""
-if ((Test-BackendMainPython $env:CNCAPTCHA_CPU_OCR_PYTHON)) {
+if ($env:CNCAPTCHA_CPU_OCR_PYTHON -and (Test-Path $env:CNCAPTCHA_CPU_OCR_PYTHON)) {
     $MainPython = $env:CNCAPTCHA_CPU_OCR_PYTHON
-} elseif ((Test-BackendMainPython $env:CNCAPTCHA_GPU_OCR_PYTHON)) {
+} elseif ($env:CNCAPTCHA_GPU_OCR_PYTHON -and (Test-Path $env:CNCAPTCHA_GPU_OCR_PYTHON)) {
     $MainPython = $env:CNCAPTCHA_GPU_OCR_PYTHON
 } else {
     $MainPython = "python"

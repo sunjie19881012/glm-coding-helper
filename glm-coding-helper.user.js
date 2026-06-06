@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         智谱 GLM Coding Plan 抢购助手 + 本地 OCR 自动验证码
 // @namespace    http://tampermonkey.net/
-// @version      8.15
+// @version      8.17
 // @description  GLM Coding Rush / 智谱 GLM Coding Plan 抢购助手，一键抢购油猴脚本 / Tampermonkey userscript，配合本地 CPU/GPU OCR 自动识别中文点选验证码并点击，支持多窗口并发、限流重试和支付页安全保护
 // @author       mumumi
 // @include      https://*bigmodel.cn/glm-coding*
@@ -16,8 +16,8 @@
 // @grant        GM_registerMenuCommand
 // @grant        GM_openInTab
 // @grant        GM_xmlhttpRequest
-// @connect      localhost:8888
-// @connect      127.0.0.1:8888
+// @connect      localhost
+// @connect      127.0.0.1
 // @connect      gtimg.com
 // @connect      *.gtimg.com
 // @connect      captcha.qcloud.com
@@ -279,26 +279,8 @@
 
     const GLM_DISCOUNT_CODE = ['9G', 'XW', 'L9', 'KC', 'GZ'].join('');
     const GLM_CODING_URL = () => `https://www.bigmodel.cn/glm-coding?ic=${GLM_DISCOUNT_CODE}&closedialog=true`;
-
-    function ensureDiscountEntry() {
-        try {
-            if (!/\/glm-coding(?:\/|$)/.test(location.pathname || '')) return false;
-            const u = new URL(location.href);
-            u.protocol = 'https:';
-            u.hostname = 'www.bigmodel.cn';
-            if (location.protocol === 'https:' && location.hostname === 'www.bigmodel.cn' &&
-                u.searchParams.get('ic') === GLM_DISCOUNT_CODE && u.searchParams.get('closedialog') === 'true') return false;
-            u.searchParams.set('ic', GLM_DISCOUNT_CODE);
-            u.searchParams.set('closedialog', 'true');
-            location.replace(u.toString());
-            return true;
-        } catch {
-            return false;
-        }
-    }
  
     // ── 限流页立即跳回主页 ────────────────────────────────────────────────────
-    if (!location.href.includes('rate-limit.html') && ensureDiscountEntry()) return;
     if (location.href.includes('rate-limit.html') && EARLY_AUTO_CLOSE_INVALID) {
         location.replace(GLM_CODING_URL());
         return;
@@ -313,18 +295,22 @@
         return;
     }
  
-    // ── v8.0: 无条件激活售罄按钮 - JSON.parse 劫持 ──────────────────────────
+    // ── v8.0: 无条件激活售罄按钮 - JSON.parse 劫持（仅开发者模式生效）────────
     const _oP = JSON.parse;
     JSON.parse = function (t, r) {
         const o = _oP(t, r);
-        try { (function f(x) {
-            if (!x || typeof x !== 'object') return;
-            if ('isSoldOut' in x && x.isSoldOut === true) x.isSoldOut = false;
-            if ('soldOut'   in x && x.soldOut   === true) x.soldOut   = false;
-            if ('disabled'  in x && x.disabled  === true && (x.price !== undefined || x.productId || x.title)) x.disabled = false;
-            if ('stock'     in x && x.stock     === 0) x.stock = 999;
-            for (const k in x) f(x[k]);
-        })(o); } catch {}
+        try {
+            if (CFG.DEV_MODE) {
+                (function f(x) {
+                    if (!x || typeof x !== 'object') return;
+                    if ('isSoldOut' in x && x.isSoldOut === true) x.isSoldOut = false;
+                    if ('soldOut'   in x && x.soldOut   === true) x.soldOut   = false;
+                    if ('disabled'  in x && x.disabled  === true && (x.price !== undefined || x.productId || x.title)) x.disabled = false;
+                    if ('stock'     in x && x.stock     === 0) x.stock = 999;
+                    for (const k in x) f(x[k]);
+                })(o);
+            }
+        } catch {}
         return o;
     };
  
@@ -446,13 +432,18 @@
         if (rCt.includes('json') && (url.includes('/api/') || url.includes('bigmodel'))) {
             try {
                 const txt = await res.clone().text();
-                const mod = txt
-                    .replace(/"isSoldOut"\s*:\s*true/g, '"isSoldOut":false')
-                    .replace(/"soldOut"\s*:\s*true/g, '"soldOut":false')
-                    .replace(/"stock"\s*:\s*0/g, '"stock":999')
-                    .replace(/"disabled"\s*:\s*true/g, '"disabled":false')
-                    .replace(/"available"\s*:\s*false/g, '"available":true')
-                    .replace(/"purchasable"\s*:\s*false/g, '"purchasable":true');
+                const mod = (() => { try { return CFG.DEV_MODE; } catch { return false; } })()
+                    ? txt
+                        .replace(/"isSoldOut"\s*:\s*true/g, '"isSoldOut":false')
+                        .replace(/"soldOut"\s*:\s*true/g, '"soldOut":false')
+                        .replace(/"stock"\s*:\s*0/g, '"stock":999')
+                        .replace(/"disabled"\s*:\s*true/g, '"disabled":false')
+                        .replace(/"available"\s*:\s*false/g, '"available":true')
+                        .replace(/"purchasable"\s*:\s*false/g, '"purchasable":true')
+                    : txt
+                        .replace(/"disabled"\s*:\s*true/g, '"disabled":false')
+                        .replace(/"available"\s*:\s*false/g, '"available":true')
+                        .replace(/"purchasable"\s*:\s*false/g, '"purchasable":true');
                 if (mod !== txt) console.log('[GLM v8.4] API响应已修改:', url.slice(0, 80));
                 return new Response(mod, { status: res.status, statusText: res.statusText, headers: res.headers });
             } catch (e) { return res; }
@@ -515,9 +506,10 @@
         AUTO_CLICK_SUB    : true,
         AUTO_CAPTCHA_CLICK : true,
         AUTO_CAPTCHA_CONFIRM: false,
+        DEV_MODE          : false,
     };
  
-    function loadCfg() { try { const s = GM_getValue(STORAGE_KEY, null); return s ? { ...DEF, ...JSON.parse(s) } : { ...DEF }; } catch { return { ...DEF }; } }
+    function loadCfg() { try { const s = GM_getValue(STORAGE_KEY, null); return s ? { ...DEF, ..._oP(s) } : { ...DEF }; } catch { return { ...DEF }; } }
     function saveCfg(c) { GM_setValue(STORAGE_KEY, JSON.stringify(c)); }
     const CFG = loadCfg();
  
@@ -584,24 +576,23 @@
     // ── 扫描队列（过滤今日已确认售罄）────────────────────────────────────────
     const tabs      = String(CFG.TABS_PRIORITY).split(',').map(Number).filter(Boolean);
     const pkgs      = String(CFG.PACKAGES_PRIORITY).split(',').map(Number).filter(Boolean);
-    const allTargets = tabs.flatMap(t => pkgs.map(p => ({ tab: t, pkg: p })));
-    const scanQueue = allTargets.filter(({ tab: t, pkg: p }) => getS(t, p) !== 1);
- 
+    const scanQueue = tabs.flatMap(t => pkgs.map(p => ({ tab: t, pkg: p }))).filter(({ tab: t, pkg: p }) => getS(t, p) !== 1);
+
     if (!scanQueue.length) {
-        scanQueue.push(...allTargets);
-        setTimeout(() => setBar('📭 今日缓存显示全售罄，仍会重新扫描确认。', '#434343'), 800);
+        setTimeout(() => { setBar('📭 今日所有配置套餐均已售罄，脚本停止。', '#434343'); triggerPromo(); }, 800);
+        return;
     }
  
     // ── 状态机变量 ────────────────────────────────────────────────────────────
     let state = 'SCANNING';   // SCANNING | TASK_UNIT | SLEEPING | DONE
  
     // SCANNING / TASK_UNIT
-    let qIdx = 0, sweepRestocks = [], lastTabSwitch = 0, sweepBusyCount = 0, emptySweepCount = 0;
-    const soldOutHits = Object.create(null);
+    let qIdx = 0, sweepRestocks = [], lastTabSwitch = 0, sweepBusyCount = 0;
     let taskTarget = null, taskPhase = 'IDLE', taskClickTime = 0, taskRLCount = 0;
     let lastCloseReason = '';
     let sleepUntil = 0;
-    const MAX_RL = 3, MODAL_WAIT = 15000, EMPTY_SWEEP_CONFIRM = 3, EMPTY_SWEEP_RETRY_MS = 180000, SOLD_OUT_CONFIRM = 2;
+    let _sweepRoundNotified = false;
+    const MAX_RL = 3, MODAL_WAIT = 15000;
  
     // ── 工具函数 ──────────────────────────────────────────────────────────────
     function parseRestock(text) {
@@ -628,22 +619,35 @@
     }
     function isRealBizId(id) { return id && !id.startsWith('debug-'); }
  
-    // ── v8.0: 黄金时间判断（9:30-10:10）──────────────────────────────────────
+    // ── v8.0: 黄金时间判断（9:50-10:10）──────────────────────────────────────
     function isGoldenTime() {
         const now = new Date();
         const h = now.getHours();
         const m = now.getMinutes();
         const time = h * 60 + m;
-        const start = 9 * 60 + 30;  // 9:30
+        const start = 9 * 60 + 50;  // 9:50
         const end = 10 * 60 + 10;   // 10:10
         return time >= start && time <= end;
     }
  
     // ── DOM 访问 ──────────────────────────────────────────────────────────────
-    const tabEl     = n => document.querySelectorAll('#switchTabBox .switch-tab-item')[n];
-    const btnEl     = n => document.querySelector(`.glm-coding-package-list > div:nth-child(${n}) > div > .package-card-btn-box > button`);
-    const canBuy    = b => b && !b.disabled && !b.classList.contains('is-disabled') && !b.classList.contains('disabled') && !/售罄|补货|暂时/.test(b.innerText || '');
-    const isSoldOut = b => /售罄|补货|暂时/.test(b?.innerText || '');
+    // tab 选择器：用文本匹配，因为 #switchTabBox 的第1个子元素是背景div，nth-child索引不对应
+    const tabEl     = n => { 
+        const label = TABS_MAP[n]; 
+        if (!label) return null; 
+        return [...document.querySelectorAll('#switchTabBox .switch-tab-item')].find(el => (el.textContent || '').trim().includes(label)) || null; 
+    };
+    // btn 选择器：用文本匹配套餐卡片(Lite/Pro/Max)找按钮
+    const btnEl     = n => {
+        const label = PKGS_MAP[n]; if (!label) return null;
+        const cards = document.querySelectorAll('.glm-coding-package-list .package-card-box');
+        const card = [...cards].find(c => (c.textContent || '').includes(label));
+        if (!card) return null;
+        return card.querySelector('.package-card-btn-box button, button.buy-btn');
+    };
+    const _isDev = () => { try { return CFG.DEV_MODE; } catch { return false; } };
+    const canBuy    = b => b && (_isDev() || (!b.disabled && !b.classList.contains('is-disabled') && !b.classList.contains('disabled'))) && (_isDev() || !/售罄|补货|暂时/.test(b.innerText || ''));
+    const isSoldOut = b => _isDev() ? false : /售罄|补货|暂时/.test(b?.innerText || '');
     const isBusy    = b => /抢购人数过多|请刷新/.test(b?.innerText || '');
  
     // ── 弹窗检测 ──────────────────────────────────────────────────────────────
@@ -754,6 +758,7 @@
     var _bar = null;
     function setBar(html, bg = '#1677ff') {
         if (!_bar) {
+            if (!document.body) return; // DOM 未就绪，静默跳过
             _bar = document.createElement('div');
             _bar.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:2147483647;padding:7px 16px;font:13px/1.5 system-ui,sans-serif;color:#fff;display:flex;align-items:center;justify-content:space-between;box-shadow:0 -2px 8px rgba(0,0,0,.25);transition:background .4s';
             const x = document.createElement('button');
@@ -806,6 +811,26 @@
         document.body.appendChild(ov);
         ov.querySelector('#promo-x').onclick = () => ov.remove();
         ov.onclick = e => { if (e.target === ov) ov.remove(); };
+    }
+
+    function triggerSweepComplete() {
+        if (document.getElementById('glm-sweep-complete')) return;
+        if (!document.body) return;
+        const lastTab = tabs.length ? TABS_MAP[tabs[tabs.length - 1]] : '最后一项';
+        const ov = document.createElement('div');
+        ov.id = 'glm-sweep-complete';
+        ov.style.cssText = 'position:fixed;top:80px;right:24px;z-index:2147483645;padding:16px 20px;background:linear-gradient(135deg,#1e3c72,#2a5298);color:#fff;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.3);font:14px/1.6 system-ui,sans-serif;max-width:420px';
+        ov.innerHTML = `
+            <div style="font-size:15px;font-weight:bold;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;gap:12px">
+                <span>🔄 已扫完所有配置的 Tab</span>
+                <button id="sweep-x" style="background:rgba(255,255,255,.2);border:none;color:#fff;width:22px;height:22px;border-radius:4px;cursor:pointer;font-size:16px;line-height:1;flex-shrink:0">×</button>
+            </div>
+            <div style="opacity:.92;font-size:13px;line-height:1.7">
+                <div>当前 Tab 停留在 <b>${lastTab}</b>（配置中的最后一项），这是脚本按优先级扫完一轮后的正常行为。</div>
+                <div style="margin-top:6px">脚本将继续监控补货。如需重新从首个 Tab 开始，请刷新页面。</div>
+            </div>`;
+        document.body.appendChild(ov);
+        ov.querySelector('#sweep-x').onclick = () => ov.remove();
     }
  
     // ── 配置面板 ──────────────────────────────────────────────────────────────
@@ -887,6 +912,11 @@
                     <span style="font-size:14px;color:#555">自动点击验证码确定</span>
                     <span title="默认关闭。开启后点完验证码文字会自动点确定；关闭后需要你手动点确定。" style="margin-left:6px;cursor:help;color:#999;font-size:14px;border:1px solid #ccc;border-radius:50%;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;line-height:1">?</span>
                 </label>
+                <label style="display:flex;align-items:center;cursor:pointer">
+                    <input type="checkbox" id="glm-dev" ${CFG.DEV_MODE ? 'checked' : ''} style="margin-right:8px">
+                    <span style="font-size:14px;color:#cf1322;font-weight:600">🛠️ 开发者模式（强制购买）</span>
+                    <span title="默认关闭。&#10;关闭（非开发者模式）：脚本识别到后端返回 soldOut/isSoldOut=true 时不会强行点击订阅按钮，而是弹出【套餐已售完】提示让用户决定。&#10;开启（开发者模式）：脚本会通过 JSON.parse 劫持把 soldOut/isSoldOut/stock=0 等状态强制改为可购买，强行点击订阅按钮（即使后端标记为售罄）。&#10;⚠️ 开启开发者模式后，售罄的套餐也会被点击，触发验证码弹窗，请确保你明确需要这个功能。" style="margin-left:6px;cursor:help;color:#999;font-size:14px;border:1px solid #ccc;border-radius:50%;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;line-height:1">?</span>
+                </label>
             </div>
             <div style="display:flex;justify-content:space-between;gap:10px">
                 <button id="glm-multi" style="padding:8px 16px;border:1px solid #52c41a;background:#f6ffed;color:#52c41a;border-radius:6px;cursor:pointer;font-weight:600">🚀 一键多开</button>
@@ -913,6 +943,7 @@
                 AUTO_CLICK_SUB    : panel.querySelector('#glm-acs').checked,
                 AUTO_CAPTCHA_CLICK: panel.querySelector('#glm-acc').checked,
                 AUTO_CAPTCHA_CONFIRM: panel.querySelector('#glm-acf').checked,
+                DEV_MODE          : panel.querySelector('#glm-dev').checked,
                 SAFE_DEFAULTS_VERSION,
             });
             ov.remove(); alert('已保存，即将刷新。'); location.reload();
@@ -925,7 +956,6 @@
     // ═══════════════════════════════════════════════════════════════════════════
     function tick() {
         if (state === 'DONE') return;
-        if (ensureDiscountEntry()) return;
  
         if (state === 'SLEEPING') {
             const rem = sleepUntil - Date.now();
@@ -952,18 +982,43 @@
     function doScan() {
         if (qIdx >= scanQueue.length) { onSweepDone(); return; }
         const { tab, pkg } = scanQueue[qIdx];
-        const te = tabEl(tab);
-        if (!te) return;
-        if (!te.classList.contains('active')) {
-            te.click(); te.scrollIntoView({ behavior: 'auto', block: 'center' });
-            lastTabSwitch = Date.now(); setBar(`🔄 切换到 ${TABS_MAP[tab]}...`); return;
+        
+        // DOM 就绪检查：如果关键元素不存在，等待下一轮 tick
+        const allTabs = document.querySelectorAll('#switchTabBox .switch-tab-item');
+        if (allTabs.length === 0) {
+            setBar('⏳ 等待页面加载...');
+            return; // 不推进 qIdx，等待下一轮
         }
+        
+        const te = tabEl(tab);
+        if (!te) { qIdx++; return; }
+
+        // 检查当前 active tab 是否是目标 tab，不是则点击切换
+        const activeTab = document.querySelector('#switchTabBox .switch-tab-item.active');
+        const isActive = activeTab && activeTab === te;
+        if (!isActive) {
+            te.click(); te.scrollIntoView({ behavior: 'auto', block: 'center' });
+            lastTabSwitch = Date.now();
+            setBar(`🔄 切换到 ${TABS_MAP[tab]}...`);
+            return;
+        }
+
         if (Date.now() - lastTabSwitch < 400) return;
  
         const b = btnEl(pkg);
+        // 如果按钮找不到且卡片列表为空，说明切换 tab 后 DOM 还没更新，等待下一轮 tick
+        if (!b) {
+            const cards = document.querySelectorAll('.glm-coding-package-list .package-card-box');
+            if (cards.length === 0) {
+                setBar(`⏳ ${TABS_MAP[tab]} 页面渲染中...`);
+                return; // 不推进 qIdx，等待下一轮
+            }
+            // 卡片存在但按钮找不到 → 配置错误或 DOM 结构异常，推进队列
+            qIdx++;
+            return;
+        }
         if (canBuy(b)) {
             taskTarget = { tab, pkg }; taskPhase = 'IDLE'; taskRLCount = 0;
-            soldOutHits[`${tab}-${pkg}`] = 0;
             setS(tab, pkg, 0); state = 'TASK_UNIT';
             setBar(`🎯 发现可购！${TABS_MAP[tab]} · ${PKGS_MAP[pkg]}，即将点击...`, '#389e0d');
             return;
@@ -983,6 +1038,10 @@
     }
  
     function onSweepDone() {
+        if (tabs.length > 1 && !_sweepRoundNotified) {
+            triggerSweepComplete();
+            _sweepRoundNotified = true;
+        }
         if (sweepBusyCount >= scanQueue.length) {
             setBar('⚡ 所有套餐系统繁忙(batch-preview 555)，刷新页面重试...', '#d46b08');
             setTimeout(() => location.replace(GLM_CODING_URL()), 1500);
@@ -990,34 +1049,24 @@
         }
         if (!sweepRestocks.length && isGoldenTime()) {
             setBar(`🔥 黄金时间！系统繁忙中，持续高频监控！`, '#ff4d4f');
-            qIdx = 0; sweepRestocks = []; sweepBusyCount = 0; emptySweepCount = 0; return;
+            qIdx = 0; sweepRestocks = []; sweepBusyCount = 0; return;
         }
         if (!sweepRestocks.length) {
-            emptySweepCount++;
-            qIdx = 0; sweepRestocks = []; sweepBusyCount = 0;
-            if (emptySweepCount < EMPTY_SWEEP_CONFIRM) {
-                setBar(`📭 暂未发现可买/补货时间，继续确认 ${emptySweepCount}/${EMPTY_SWEEP_CONFIRM}...`, '#434343');
-                return;
-            }
-            state = 'SLEEPING';
-            sleepUntil = Date.now() + EMPTY_SWEEP_RETRY_MS;
-            setBar(`📭 连续 ${EMPTY_SWEEP_CONFIRM} 轮未发现库存，${fmt(EMPTY_SWEEP_RETRY_MS)} 后重新扫描。脚本未停止。`, '#434343');
-            return;
+            state = 'DONE'; setBar('📭 今日全部售罄，脚本停止。', '#434343'); triggerPromo(); return;
         }
-        emptySweepCount = 0;
         sweepRestocks.sort((a, b) => a.msUntil - b.msUntil);
         const nearest = sweepRestocks[0];
         const sleep   = calcSleepMs(nearest.msUntil);
  
-        // ── v8.0: 黄金时间（9:30-10:10）禁止刷新页面 ──────────────────────────
+        // ── v8.0: 黄金时间（9:50-10:10）禁止刷新页面 ──────────────────────────
         if (isGoldenTime()) {
             setBar(`🔥 黄金时间！补货倒计时 <b>${fmt(nearest.msUntil)}</b>，禁止刷新，高频监控！`, '#ff4d4f');
-            qIdx = 0; sweepRestocks = []; sweepBusyCount = 0; return;
+            qIdx = 0; sweepRestocks = []; return;
         }
  
         if (sleep === 0) {
             setBar(`⚡ 补货倒计时 <b>${fmt(nearest.msUntil)}</b>，高频监控！`, '#d4380d');
-            qIdx = 0; sweepRestocks = []; sweepBusyCount = 0; return;
+            qIdx = 0; sweepRestocks = []; return;
         }
         if (CFG.SMART_REFRESH) {
             state = 'SLEEPING'; sleepUntil = Date.now() + sleep;
@@ -1029,7 +1078,8 @@
         const { tab, pkg } = taskTarget;
         const te = tabEl(tab);
         if (!te) return;
-        if (!te.classList.contains('active')) { te.click(); return; }
+        const activeTab = document.querySelector('#switchTabBox .switch-tab-item.active');
+        if (activeTab !== te) { te.click(); return; }
         const b = btnEl(pkg);
  
         if (taskPhase === 'IDLE') {
@@ -1161,9 +1211,7 @@
     function exitTask() {
         // v8.0: 黄金时间内不标记售罄，持续重试
         if (!isGoldenTime()) {
-            const key = `${taskTarget.tab}-${taskTarget.pkg}`;
-            soldOutHits[key] = (soldOutHits[key] || 0) + 1;
-            if (soldOutHits[key] >= SOLD_OUT_CONFIRM) setS(taskTarget.tab, taskTarget.pkg, 1);
+            setS(taskTarget.tab, taskTarget.pkg, 1);
         }
         setBar(`📦 ${TABS_MAP[taskTarget.tab]} · ${PKGS_MAP[taskTarget.pkg]} 售罄，继续...`);
         qIdx++; taskTarget = null; taskPhase = 'IDLE'; taskRLCount = 0;
@@ -1172,7 +1220,8 @@
  
     // ── v8.4: DOM 级按钮强制启用（安全网）─────────────────────────────────────
     function forceEnableButtons() {
-        document.querySelectorAll('.buy-btn[disabled], .buy-btn.is-disabled, .buy-btn.disabled').forEach(b => {
+        const sel = '.buy-btn[disabled], .buy-btn.is-disabled, .buy-btn.disabled, .package-card-btn-box > button[disabled], .package-card-btn-box > button.is-disabled, .package-card-btn-box > button.disabled';
+        document.querySelectorAll(sel).forEach(b => {
             b.removeAttribute('disabled');
             b.classList.remove('is-disabled', 'disabled');
         });

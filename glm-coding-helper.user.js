@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         智谱 GLM Coding Plan 抢购助手 + 本地 OCR 自动验证码
 // @namespace    http://tampermonkey.net/
-// @version      8.17
+// @version      8.18
 // @description  GLM Coding Rush / 智谱 GLM Coding Plan 抢购助手，一键抢购油猴脚本 / Tampermonkey userscript，配合本地 CPU/GPU OCR 自动识别中文点选验证码并点击，支持多窗口并发、限流重试和支付页安全保护
 // @author       mumumi
 // @include      https://*bigmodel.cn/glm-coding*
@@ -171,8 +171,11 @@
         function dispatchClick(el, nx, ny, label) {
             const rect = el.getBoundingClientRect();
             const win = el.ownerDocument.defaultView || window;
-            const clientX = rect.left + nx * rect.width;
-            const clientY = rect.top + ny * rect.height;
+            // 随机偏移：±0.03 归一化坐标（约半个字宽），防止被识别为机器人
+            const jx = nx + (Math.random() - 0.5) * 0.06;
+            const jy = ny + (Math.random() - 0.5) * 0.06;
+            const clientX = rect.left + jx * rect.width;
+            const clientY = rect.top + jy * rect.height;
             const base = { bubbles: true, cancelable: true, view: win, clientX, clientY, button: 0, buttons: 1 };
             const pointer = { ...base, pointerId: 1, pointerType: 'mouse', isPrimary: true, pressure: 0.5 };
             try { if (win.PointerEvent) el.dispatchEvent(new win.PointerEvent('pointerdown', pointer)); } catch {}
@@ -236,7 +239,7 @@
                 const ny = Number(point.ny);
                 if (!Number.isFinite(nx) || !Number.isFinite(ny)) continue;
                 dispatchClick(bgEl, nx, ny, point.char || '');
-                await sleep(180);
+                await sleep(180 + Math.random() * 200); // 180~380ms 随机间隔
             }
             await sleep(250);
             if (captchaCfg.AUTO_CAPTCHA_CONFIRM) clickConfirm();
@@ -579,7 +582,7 @@
     const scanQueue = tabs.flatMap(t => pkgs.map(p => ({ tab: t, pkg: p }))).filter(({ tab: t, pkg: p }) => getS(t, p) !== 1);
 
     if (!scanQueue.length) {
-        setTimeout(() => { setBar('📭 今日所有配置套餐均已售罄，脚本停止。', '#434343'); triggerPromo(); }, 800);
+        setTimeout(() => { setBar('📭 今日配置套餐均已售罄，脚本停止。', '#434343'); triggerPromo(); }, 800);
         return;
     }
  
@@ -588,6 +591,8 @@
  
     // SCANNING / TASK_UNIT
     let qIdx = 0, sweepRestocks = [], lastTabSwitch = 0, sweepBusyCount = 0;
+    let _btnWaitCount = 0; // 按钮等待计数：卡片存在但按钮未就绪时等待几轮
+    const MAX_BTN_WAIT = 8; // 最多等 8 个 tick（约 640ms）
     let taskTarget = null, taskPhase = 'IDLE', taskClickTime = 0, taskRLCount = 0;
     let lastCloseReason = '';
     let sleepUntil = 0;
@@ -638,10 +643,12 @@
         return [...document.querySelectorAll('#switchTabBox .switch-tab-item')].find(el => (el.textContent || '').trim().includes(label)) || null; 
     };
     // btn 选择器：用文本匹配套餐卡片(Lite/Pro/Max)找按钮
+    // 注意：卡片 textContent 以套餐名开头(Lite/Pro/Max)，但 Pro/Max 描述中包含 "Lite" 字样
+    // 所以用 startsWith 匹配，而非 includes，避免 Pro 卡片被 includes('Lite') 误匹配
     const btnEl     = n => {
         const label = PKGS_MAP[n]; if (!label) return null;
         const cards = document.querySelectorAll('.glm-coding-package-list .package-card-box');
-        const card = [...cards].find(c => (c.textContent || '').includes(label));
+        const card = [...cards].find(c => (c.textContent || '').trimStart().startsWith(label)) || null;
         if (!card) return null;
         return card.querySelector('.package-card-btn-box button, button.buy-btn');
     };
@@ -1003,20 +1010,29 @@
             return;
         }
 
-        if (Date.now() - lastTabSwitch < 400) return;
+        if (Date.now() - lastTabSwitch < 600) return; // tab 切换后等待 Vue 渲染
  
         const b = btnEl(pkg);
         // 如果按钮找不到且卡片列表为空，说明切换 tab 后 DOM 还没更新，等待下一轮 tick
         if (!b) {
             const cards = document.querySelectorAll('.glm-coding-package-list .package-card-box');
             if (cards.length === 0) {
+                _btnWaitCount = 0;
                 setBar(`⏳ ${TABS_MAP[tab]} 页面渲染中...`);
                 return; // 不推进 qIdx，等待下一轮
             }
-            // 卡片存在但按钮找不到 → 配置错误或 DOM 结构异常，推进队列
+            // 卡片存在但按钮找不到 → 可能 Vue 还在渲染按钮，等几轮再跳过
+            _btnWaitCount++;
+            if (_btnWaitCount < MAX_BTN_WAIT) {
+                setBar(`⏳ ${TABS_MAP[tab]} · ${PKGS_MAP[pkg]} 按钮加载中...`);
+                return; // 继续等待
+            }
+            // 等够轮数仍然找不到按钮 → 配置错误或 DOM 结构异常，推进队列
+            _btnWaitCount = 0;
             qIdx++;
             return;
         }
+        _btnWaitCount = 0; // 按钮找到了，重置计数
         if (canBuy(b)) {
             taskTarget = { tab, pkg }; taskPhase = 'IDLE'; taskRLCount = 0;
             setS(tab, pkg, 0); state = 'TASK_UNIT';
@@ -1052,7 +1068,11 @@
             qIdx = 0; sweepRestocks = []; sweepBusyCount = 0; return;
         }
         if (!sweepRestocks.length) {
-            state = 'DONE'; setBar('📭 今日全部售罄，脚本停止。', '#434343'); triggerPromo(); return;
+            // 配置的套餐全部售罄，每天10点补货，直接停止
+            state = 'DONE';
+            setBar('📭 今日配置套餐全部售罄，脚本停止。明日10点补货。', '#434343');
+            triggerPromo();
+            return;
         }
         sweepRestocks.sort((a, b) => a.msUntil - b.msUntil);
         const nearest = sweepRestocks[0];
@@ -1438,7 +1458,7 @@
                         var cy = tgtRect.top + ny * tgtRect.height;
                         console.log('[captcha-rush] click #' + (ci+1) + ' "' + c.char + '" norm=(' + nx.toFixed(3) + ',' + ny.toFixed(3) + ') screen=(' + Math.round(cx) + ',' + Math.round(cy) + ')');
                         dispatchClickAt(clickTarget, nx * tgtRect.width, ny * tgtRect.height, String(ci + 1));
-                        await new Promise(function(r) { setTimeout(r, 350); });
+                        await new Promise(function(r) { setTimeout(r, 350 + Math.random() * 200); }); // 350~550ms 随机间隔
                     }
                     rushStatus('\u2705 [#' + winIdx + '] \u70B9\u51FB\u5B8C\u6215! \u7B49\u5F85\u5361\u70B9...', '#237804');
                 } else {
@@ -1724,8 +1744,11 @@
 
     function dispatchClickAt(el, relX, relY, label) {
         var rect = el.getBoundingClientRect();
-        var clientX = rect.left + relX;
-        var clientY = rect.top + relY;
+        // 随机偏移：±0.03 归一化坐标（约半个字宽），防止被识别为机器人
+        var jx = relX + (Math.random() - 0.5) * 0.06 * rect.width;
+        var jy = relY + (Math.random() - 0.5) * 0.06 * rect.height;
+        var clientX = rect.left + jx;
+        var clientY = rect.top + jy;
 
         var evtWin = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
         var opts = { bubbles: true, cancelable: true, view: evtWin, clientX: clientX, clientY: clientY,
@@ -1888,7 +1911,7 @@
                 if (!Number.isFinite(ny) && Number.isFinite(Number(c.rel_y))) ny = Number(c.rel_y) / rect.height;
                 if (!Number.isFinite(nx) || !Number.isFinite(ny)) continue;
                 dispatchClickAt(bgEl, nx * rect.width, ny * rect.height, c.char || String(i + 1));
-                await new Promise(function(r) { setTimeout(r, 220); });
+                await new Promise(function(r) { setTimeout(r, 220 + Math.random() * 200); }); // 220~420ms 随机间隔
             }
             await new Promise(function(r) { setTimeout(r, 350); });
             if (CAPTCHA_CFG.AUTO_CAPTCHA_CONFIRM) {

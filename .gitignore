@@ -35,6 +35,9 @@ Thumbs.db
 .idea/
 .vscode/
 
+# Build resources (heavy env, not committed)
+resource/
+
 # Local secrets
 .env
 *.env
